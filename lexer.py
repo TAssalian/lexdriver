@@ -24,7 +24,7 @@ reserved_words = set(
     "main"
 )
 
-@dataclass(frozen=True)
+@dataclass()
 class Lexer:
     text: str
     position: int = -1
