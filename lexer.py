@@ -32,10 +32,10 @@ class Lexer:
     pos: int = -1
     current_char: int | None = None
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._advance()
     
-    def get_next_token(self):
+    def get_next_token(self) -> Token:
         self._skip_whitespace()
         lexeme = self.current_char
         
@@ -45,28 +45,27 @@ class Lexer:
         else:
             print("Not yet implemented")
     
-    def _advance(self):
+    def _advance(self) -> None: 
         self.pos += 1
         self.current_char = self.text[self.pos] if self.pos < len(self.text) else None    
     
-    def _skip_whitespace(self):
+    def _skip_whitespace(self) -> None:
         while self.current_char is not None and self.current_char.isspace():
             self._advance()
     
-    def _get_id_or_reserved_word_token(self, lexeme):
+    def _get_id_or_reserved_word_token(self, lexeme) -> Token:
         while self.current_char.isalnum() or self.current_char == "_":
             lexeme += self.current_char
             self._advance()
         
         if not self.current_char.isspace():
             lexeme = self._exhaust_invalid_id(lexeme)
-            lexeme_type = "invalidid" # TODO: Remove hardcore after determining what error types to include
-        else:
-            lexeme_type = self._get_id_or_reserved_word_type(lexeme)
+            return Token("invalidid", lexeme, -1) # TODO: Remove hardcore after determining what error types to include
         
+        lexeme_type = self._get_id_or_reserved_word_tokentype(lexeme)
         return Token(lexeme_type, lexeme, -1) # TODO: Remove this hardcoded value for actual line numbern
         
-    def _get_id_or_reserved_word_type(self, lexeme):
+    def _get_id_or_reserved_word_tokentype(self, lexeme) -> TokenType:
         if lexeme in reserved_words:
             return TokenType[lexeme.upper()]
         elif lexeme.lower() in reserved_words and lexeme not in reserved_words:
@@ -74,7 +73,7 @@ class Lexer:
         else:
             return TokenType.ID
     
-    def _exhaust_invalid_id(self, lexeme):
+    def _exhaust_invalid_id(self, lexeme) -> str:
         lexeme += self.current_char
         self._advance()
         while not self.current_char.isspace():
