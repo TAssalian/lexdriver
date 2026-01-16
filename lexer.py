@@ -52,13 +52,14 @@ class Lexer:
     def _skip_whitespace(self) -> None:
         while self.current_char is not None and self.current_char.isspace():
             self._advance()
-    
+            
     def _get_id_or_reserved_word_token(self, lexeme) -> Token:
-        while self.current_char.isalnum() or self.current_char == "_":
+        # TODO: Find if there's a better way to keep this method as a token constructor only, and remove its ability to handle the handling of invalidid by having invalidid be determined in _get_id_or_reserved_word_tokentype(). Have a separation of concerns
+        while self.current_char is not None and self.current_char.isalnum() or self.current_char == "_":
             lexeme += self.current_char
             self._advance()
         
-        if not self.current_char.isspace():
+        if self.current_char is not None and not self.current_char.isspace():
             lexeme = self._exhaust_invalid_id(lexeme)
             return Token("invalidid", lexeme, -1) # TODO: Remove hardcore after determining what error types to include
         
@@ -74,9 +75,7 @@ class Lexer:
             return TokenType.ID
     
     def _exhaust_invalid_id(self, lexeme) -> str:
-        lexeme += self.current_char
-        self._advance()
-        while not self.current_char.isspace():
+        while self.current_char is not None and not self.current_char.isspace():
             lexeme += self.current_char
             self._advance()
         return lexeme
