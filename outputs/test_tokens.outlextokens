@@ -1,2 +1,5 @@
-[id, abc1, -1]
-[error, a?1, -1]
+[id, abc1, 1]
+[error, a?1, 1]
+[if, if, 1]
+[else, else, 2]
+[error, ElSe, 4]

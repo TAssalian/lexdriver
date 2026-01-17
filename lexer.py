@@ -31,6 +31,7 @@ class Lexer:
     text: str
     pos: int = -1
     current_char: int | None = None
+    line: int = 1
     
     def __post_init__(self) -> None:
         self._advance()
@@ -49,14 +50,16 @@ class Lexer:
     
     def _advance(self) -> None: 
         self.pos += 1
-        self.current_char = self.text[self.pos] if self.pos < len(self.text) else None    
+        self.current_char = self.text[self.pos] if self.pos < len(self.text) else None
+        if self.current_char == "\n":
+            self.line += 1
     
     def _skip_whitespace(self) -> None:
         while self.current_char is not None and self.current_char.isspace():
             self._advance()
             
     def _get_id_or_reserved_word_token(self, lexeme: str) -> Token:
-        while self.current_char is not None and self.current_char.isalnum() or self.current_char == "_":
+        while self.current_char is not None and (self.current_char.isalnum() or self.current_char == "_"):
             lexeme += self.current_char
             self._advance()
         
@@ -64,7 +67,7 @@ class Lexer:
             lexeme = self._exhaust_invalid_id(lexeme)
         
         lexeme_type = self._get_id_or_reserved_word_tokentype(lexeme)
-        return Token(lexeme_type, lexeme, -1) # TODO: Remove this hardcoded value for actual line number
+        return Token(lexeme_type, lexeme, self.line) # TODO: Remove this hardcoded value for actual line number
         
     def _get_id_or_reserved_word_tokentype(self, lexeme: str) -> TokenType:
         if not all(char.isalnum() or char == "_" for char in lexeme):
