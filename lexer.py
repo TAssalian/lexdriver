@@ -104,7 +104,10 @@ class Lexer:
     def _is_integer(self, lexeme: str) -> bool:
         if lexeme == "0":
             return True
-        return lexeme[0] in nonzero_digits and lexeme[1:].isdigit()
+        elif len(lexeme) == 1:
+            return lexeme[0] in nonzero_digits
+        else:
+            return lexeme[0] in nonzero_digits and lexeme[1:].isdigit()
 
     def _is_float(self, lexeme: str) -> bool:
         if lexeme.count("e") > 1:
@@ -122,9 +125,10 @@ class Lexer:
 
         if exp == "":
             return True
-        if len(exp) < 2 or exp[0] not in ({"+", "-"} | nonzero_digits): # TODO: Allow an integer right after 'e', not just + or -
-            return False
-        return self._is_integer(exp[1:])
+        if exp[0] in {"+", "-"}:
+            return len(exp) > 1 and self._is_integer(exp[1:])
+        else:
+            return self._is_integer(exp)
 
     def _is_fraction(self, lexeme: str) -> bool:
         if lexeme == ".0":

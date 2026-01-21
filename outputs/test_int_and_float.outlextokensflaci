@@ -22,5 +22,5 @@
 '123.00e-12' at line 25 in Flaci's input format
 '123.001e+12' at line 26 in Flaci's input format
 '123e1' at line 27 in Flaci's input format
-'123.0e10' at line 28 in Flaci's input format
+'123.0e5' at line 28 in Flaci's input format
 '123.0e+100' at line 28 in Flaci's input format

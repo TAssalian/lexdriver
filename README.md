@@ -12,7 +12,7 @@ This section defines the lexical specification, expressed as regular expressions
 ```text
 id       ::= letter alphanum*
 integer  ::= nonzero digit* | "0"
-float    ::= integer fraction ["e" (+|-) integer]
+float    ::= integer fraction ["e" [+|-] integer]
 
 
 alphanum ::= letter | digit | "_"
