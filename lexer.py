@@ -43,63 +43,94 @@ class Lexer:
     
     def get_next_token(self) -> Token:
         self._skip_whitespace()
-        lexeme = self.current_char
-        
+
         if self.current_char is None:
-            return
+            return None
         elif self.current_char.isalpha():
-            self._advance()
-            return self._get_id_or_reserved_word_token(lexeme)
+            return self._get_id_or_reserved_word_token()
         elif self.current_char.isdigit():
-            self._advance()
-            return self._get_integer_or_float_token(lexeme)
+            return self._get_integer_or_float_token()
+        elif self._is_comment_token():
+            return self._get_comment_token()
+        elif self._is_operator_or_punct():
+            return self._get_operator_or_punct_token()
         else:
-            print("Not yet implemented")
+            lexeme = self.current_char
+            self._advance()
+            return Token(TokenType.ERROR, lexeme, self.line)
     
     def _advance(self) -> None: 
         self.pos += 1
         self.current_char = self.text[self.pos] if self.pos < len(self.text) else None
-        if self.current_char == "\n":
-            self.line += 1
     
     def _skip_whitespace(self) -> None:
         while self.current_char and self.current_char.isspace():
+            if self.current_char == "\n":
+                self.line += 1
             self._advance()
     
-    def _exhaust_token(self, lexeme: str) -> str:
-        while self.current_char and not self.current_char.isspace():
+    def _look_ahead(self) -> str | None:
+        next_pos = self.pos + 1
+        return self.text[next_pos] if next_pos < len(self.text) else None
+    
+    
+    def _get_id_or_reserved_word_token(self) -> Token:
+        lexeme = self._get_id()
+
+        if lexeme in reserved_words:
+            lexeme_type = TokenType[lexeme.upper()]
+        else:
+            lexeme_type = TokenType.ID
+        return Token(lexeme_type, lexeme, self.line)
+    
+    def _get_id(self) -> str:
+        lexeme = ""
+        while self.current_char and (self.current_char.isalnum() or self.current_char == "_"):
             lexeme += self.current_char
             self._advance()
         return lexeme
     
-    def _get_id_or_reserved_word_token(self, lexeme: str) -> Token:
-        lexeme = self._exhaust_token(lexeme)
-
-        if self._is_id(lexeme):
-            if lexeme in reserved_words:
-                lexeme_type = TokenType[lexeme.upper()]
-            elif lexeme.lower() in reserved_words and lexeme not in reserved_words:
-                lexeme_type = TokenType.ERROR
-            else:
-                lexeme_type = TokenType.ID
-        else:
-            lexeme_type = TokenType.ERROR
-        return Token(lexeme_type, lexeme, self.line)
     
-    def _is_id(self, lexeme: str) -> bool:
-        return all(char.isalnum() or char == "_" for char in lexeme[1:])
-
-    
-    def _get_integer_or_float_token(self, lexeme: str) -> Token:
-        lexeme = self._exhaust_token(lexeme)
+    def _get_integer_or_float_token(self) -> Token:
+        lexeme = self._consume_number()
 
         if self._is_integer(lexeme):
-            lexeme_type = TokenType.INTEGER
+            lexeme_type = TokenType.INTNUM
         elif self._is_float(lexeme):
-            lexeme_type = TokenType.FLOAT
+            lexeme_type = TokenType.FLOATNUM
         else:
             lexeme_type = TokenType.ERROR
         return Token(lexeme_type, lexeme, self.line)
+    
+    def _consume_number(self) -> str:
+        lexeme = ""
+        seen_dot = False
+        seen_e = False
+        sign_allowed = False
+
+        while self.current_char:
+            if self.current_char.isdigit():
+                lexeme += self.current_char
+                self._advance()
+                sign_allowed = False
+            elif self.current_char == "." and not seen_dot and not seen_e:
+                seen_dot = True
+                lexeme += self.current_char
+                self._advance()
+                sign_allowed = False
+            elif self.current_char == "e" and not seen_e:
+                seen_e = True
+                lexeme += self.current_char
+                self._advance()
+                sign_allowed = True
+            elif self.current_char in {"+", "-"} and sign_allowed:
+                lexeme += self.current_char
+                self._advance()
+                sign_allowed = False
+            else:
+                break
+
+        return lexeme
 
     def _is_integer(self, lexeme: str) -> bool:
         if lexeme == "0":
@@ -135,5 +166,102 @@ class Lexer:
             return True
         if not lexeme.startswith("."):
             return False
-        tail = lexeme[1:]
-        return tail.isdigit() and tail[-1] in nonzero_digits
+        end = lexeme[1:]
+        return end.isdigit() and end[-1] in nonzero_digits
+
+    def _is_comment_token(self) -> bool:
+        char = self.current_char
+        return char == "/" and self._look_ahead() in {"/", "*"}
+    
+    def _get_comment_token(self) -> Token:
+        if self._look_ahead() not in {"/", "*"}:
+            return False
+        lexeme = self.current_char
+        self._advance()
+
+        if self.current_char == "/":
+            lexeme += self.current_char
+            self._advance()
+            while self.current_char is not None and self.current_char != "\n":
+                lexeme += self.current_char
+                self._advance()
+            return Token(TokenType.INLINECMT, lexeme, self.line)
+
+        elif self.current_char == "*":
+            lexeme += self.current_char
+            self._advance()
+            start_line = self.line
+            closed = False
+            while self.current_char is not None:
+                if self.current_char == "\n":
+                    self.line += 1
+                    lexeme += r"\n"
+                else:
+                    lexeme += self.current_char
+                if self.current_char == "*" and self._look_ahead() == "/":
+                    self._advance()
+                    lexeme += self.current_char
+                    self._advance()
+                    closed = True
+                    break
+                self._advance()
+            if not closed:
+                return Token(TokenType.ERROR, lexeme, start_line)
+            return Token(TokenType.BLOCKCMT, lexeme, start_line)
+
+        return Token(TokenType.ERROR, lexeme, start_line)
+
+
+    def _is_operator_or_punct(self) -> bool:
+        if self.current_char is None:
+            return False
+        if self.current_char in {"+", "-", "*", "/", "(", ")", "{", "}", "[", "]", ";", ",", ".", ":", "=", "<", ">"}:
+            return True
+        return False
+
+    def _get_operator_or_punct_token(self) -> Token:
+        if self.current_char == ":" and self._look_ahead() == ":":
+            self._advance()
+            self._advance()
+            return Token(TokenType.COLONCOLON, "::", self.line)
+        if self.current_char == "=" and self._look_ahead() == "=":
+            self._advance()
+            self._advance()
+            return Token(TokenType.EQ, "==", self.line)
+        if self.current_char == "<" and self._look_ahead() == ">":
+            self._advance()
+            self._advance()
+            return Token(TokenType.NOTEQ, "<>", self.line)
+        if self.current_char == "<" and self._look_ahead() == "=":
+            self._advance()
+            self._advance()
+            return Token(TokenType.LEQ, "<=", self.line)
+        if self.current_char == ">" and self._look_ahead() == "=":
+            self._advance()
+            self._advance()
+            return Token(TokenType.GEQ, ">=", self.line)
+
+        char = self.current_char
+        self._advance()
+        single_misc = {
+            "=": TokenType.ASSIGN,
+            "<": TokenType.LT,
+            ">": TokenType.GT,
+            "+": TokenType.PLUS,
+            "-": TokenType.MINUS,
+            "*": TokenType.MULT,
+            "/": TokenType.DIV,
+            "(": TokenType.OPENPAR,
+            ")": TokenType.CLOSEPAR,
+            "{": TokenType.OPENCUBR,
+            "}": TokenType.CLOSECUBR,
+            "[": TokenType.OPENSQBR,
+            "]": TokenType.CLOSESQBR,
+            ";": TokenType.SEMI,
+            ",": TokenType.COMMA,
+            ".": TokenType.DOT,
+            ":": TokenType.COLON,
+        }
+        if char in single_misc:
+            return Token(single_misc[char], char, self.line)
+        return Token(TokenType.ERROR, char, self.line)
