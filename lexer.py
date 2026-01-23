@@ -53,7 +53,7 @@ single_misc = {
 
 
 @dataclass()
-class Lexer:
+class Lexer: 
     text: str
     pos: int = -1
     current_char: int | None = None
@@ -150,7 +150,6 @@ class Lexer:
                 sign_allowed = False
             else:
                 break
-
         return lexeme
 
     def _is_integer(self, lexeme: str) -> bool:
@@ -192,6 +191,7 @@ class Lexer:
         end = lexeme[1:]
         return end.isdigit() and end[-1] in nonzero_digits
 
+
     def _is_comment_token(self) -> bool:
         char = self.current_char
         return char == "/" and self._look_ahead() in {"/", "*"}
@@ -231,6 +231,7 @@ class Lexer:
             if not closed:
                 return Token(TokenType.INVALIDCMT, lexeme, start_line)
             return Token(TokenType.BLOCKCMT, lexeme, start_line)
+
 
     def _is_operator_or_punct(self) -> bool:
         if self.current_char is None:

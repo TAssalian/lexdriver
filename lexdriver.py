@@ -23,13 +23,17 @@ def run_lexer(input_path: Path, output_dir: Path) -> None:
         open(out_flaci, "w", encoding="utf-8") as f,
         open(out_errs, "w", encoding="utf-8") as e,
     ):
+        first_flaci = True
         while True:
             token = lexer.get_next_token()
             if token is None:
                 break
         
             t.write(token.to_outtokens() + "\n")
-            f.write(token.to_flaci() + "\n")
+            if not first_flaci:
+                f.write(" ")
+            f.write(token.to_flaci())
+            first_flaci = False
             if token.type in {TokenType.INVALIDCHAR, TokenType.INVALIDNUM, TokenType.INVALIDCMT}:
                 e.write(token.to_outerrs() + "\n")
 
