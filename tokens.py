@@ -57,7 +57,6 @@ class TokenType(Enum):
     INLINECMT = "inlinecmt"
     
     INVALIDCHAR = "invalidchar"
-    INVALIDID = "invalidid"
     INVALIDNUM = "invalidnum"
     INVALIDCMT = "invalidcmt"
 

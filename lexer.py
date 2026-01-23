@@ -165,6 +165,8 @@ class Lexer:
         if lexeme.count("e") > 1:
             return False
         base, exp = (lexeme.split("e") + [""])[:2]
+        if "e" in lexeme and exp == "":
+            return False
 
         if "." not in base or base.count(".") > 1:
             return False
