@@ -390,7 +390,7 @@ table = {
         "lsqbr": ["REPTVARIABLE2", "VARIABLE2"],
         "dot": ["REPTVARIABLE2", "VARIABLE2"],
         "rpar": ["REPTVARIABLE2", "VARIABLE2"],
-        "lpar": ["lpar", "APPARAMS", "rpar", "dot", "id", "VARIABLE1"]
+        "lpar": ["lpar", "APARAMS", "rpar", "dot", "id", "VARIABLE1"]
     },
     "VARIABLE2": {
         "dot": ["dot", "id", "VARIABLE1"],
@@ -400,53 +400,4 @@ table = {
         "private": ["private"],
         "public": ["public"]
     }   
-}
-
-terminals = {
-    ",",
-    "+",
-    "-",
-    "or",
-    "[",
-    "intNum",
-    "]",
-    "=",
-    "class",
-    "id",
-    "{",
-    "}",
-    ";",
-    "(",
-    ")",
-    "floatNum",
-    "not",
-    "do",
-    "end",
-    ":",
-    "void",
-    ".",
-    "*",
-    "/",
-    "and",
-    "inherits",
-    "local",
-    "sr",
-    "main",
-    "eq",
-    "geq",
-    "gt",
-    "leq",
-    "lt",
-    "neq",
-    "if",
-    "then",
-    "else",
-    "read",
-    "return",
-    "while",
-    "write",
-    "float",
-    "integer",
-    "private",
-    "public"
 }
