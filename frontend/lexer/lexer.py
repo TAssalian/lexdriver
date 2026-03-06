@@ -1,5 +1,8 @@
 from dataclasses import dataclass
-from lexer.tokens import Token, TokenType
+try:
+    from frontend.lexer.tokens import Token, TokenType
+except ModuleNotFoundError:
+    from lexer.tokens import Token, TokenType
 
 
 reserved_words = {
@@ -32,23 +35,23 @@ nonzero_digits = {
 }
 
 single_misc = {
-            "=": TokenType.ASSIGN,
-            "<": TokenType.LT,
-            ">": TokenType.GT,
-            "+": TokenType.PLUS,
-            "-": TokenType.MINUS,
-            "*": TokenType.MULT,
-            "/": TokenType.DIV,
-            "(": TokenType.OPENPAR,
-            ")": TokenType.CLOSEPAR,
-            "{": TokenType.OPENCUBR,
-            "}": TokenType.CLOSECUBR,
-            "[": TokenType.OPENSQBR,
-            "]": TokenType.CLOSESQBR,
-            ";": TokenType.SEMI,
-            ",": TokenType.COMMA,
-            ".": TokenType.DOT,
-            ":": TokenType.COLON,
+    "=": TokenType.ASSIGN,
+    "<": TokenType.LT,
+    ">": TokenType.GT,
+    "+": TokenType.PLUS,
+    "-": TokenType.MINUS,
+    "*": TokenType.MULT,
+    "/": TokenType.DIV,
+    "(": TokenType.OPENPAR,
+    ")": TokenType.CLOSEPAR,
+    "{": TokenType.OPENCUBR,
+    "}": TokenType.CLOSECUBR,
+    "[": TokenType.OPENSQBR,
+    "]": TokenType.CLOSESQBR,
+    ";": TokenType.SEMI,
+    ",": TokenType.COMMA,
+    ".": TokenType.DOT,
+    ":": TokenType.COLON,
 }
 
 

@@ -1,7 +1,10 @@
-from dataclasses import dataclass
-from lexer.lexer import Lexer
-from lexer.tokens import TokenType
-from parser.table import table
+from dataclasses import dataclass, field
+from frontend.lexer.lexer import Lexer
+from frontend.lexer.tokens import Token, TokenType
+from frontend.parser.table import table
+
+
+from frontend.ast.semantic_actions import semantic_actions, semantic_stack
 
 
 token_map = {
@@ -33,6 +36,7 @@ class ParseResult:
     success: bool
     errors: list[str]
     derivation: list[str]
+    ast_stack: list = field(default_factory=list)
 
 
 def _next_non_comment_token(lexer: Lexer):
@@ -50,10 +54,8 @@ def _lexer_to_terminal(token):
     if token.type in invalid_tokens:
         return None
 
-    # Use token_map if needed, otherwise keep the original token name
     return token_map.get(token.type.value, token.type.value)
 
-# Error message
 def _describe_token(token) -> str:
     if token is None:
         return "end of file"
@@ -62,10 +64,6 @@ def _describe_token(token) -> str:
 
 
 def _expected_lookaheads(non_terminal: str) -> str:
-    """
-    Return a comma-separated list of valid lookahead tokens
-    for a given non-terminal (from the parse table).
-    """
     expected = sorted(table[non_terminal].keys())
     return ", ".join(expected) if expected else "<none>"
 
@@ -82,14 +80,15 @@ def _format_form(form: list[str]) -> str:
 
 
 def parse(lexer: Lexer) -> ParseResult:
+    semantic_stack.clear()
     stack = ["$", "START"]
     errors: list[str] = []
     derivation = ["START"]
     form = ["START"]
-
     
     token = _next_non_comment_token(lexer)
     lookahead = _lexer_to_terminal(token)
+    last_matched_token: Token | None = None
 
     def advance():
         nonlocal token, lookahead
@@ -103,7 +102,6 @@ def parse(lexer: Lexer) -> ParseResult:
     while stack and stack[-1] != "$":
         top = stack[-1]
 
-        # Invalid token
         if lookahead is None:
             errors.append(
                 f"Syntax error at line {line_of_current()}: "
@@ -112,33 +110,28 @@ def parse(lexer: Lexer) -> ParseResult:
             advance()
             continue
 
-        # Top of stack is a terminal
-        if top not in table:
+        if top not in table and not top.startswith("#"):
             if top == lookahead:
-                # Terminal matches, consume it
                 stack.pop()
+                last_matched_token = token
                 advance()
             else:
-                # Terminal mismatch, assume missing terminal
                 errors.append(
                     f"Syntax error at line {line_of_current()}: "
                     f"expected '{top}' but found {_describe_token(token)}."
                 )
                 stack.pop()
         
-        else:
+        elif top in table:
             productions = table[top]
 
-            # Valid production is found
             if lookahead in productions:
                 rhs = productions[lookahead]
                 stack.pop()
                 stack.extend(reversed(rhs))
 
-                # Find leftmost occurrence of the non-terminal and current sentential form and replace it with the RHS
                 form = _apply_leftmost_step(form, top, rhs)
                 derivation.append(_format_form(form))
-            # The parser has a non-terminal on top of the stack, but there is no valid rule for it.
             else: 
                 errors.append(
                     f"Syntax error at line {line_of_current()}: "
@@ -146,30 +139,34 @@ def parse(lexer: Lexer) -> ParseResult:
                     f"expected one of: {_expected_lookaheads(top)}."
                 )
 
-                # Set of made up first and follow.
-                # It's ok if the non-terminal at the top of the stack goes away
                 sync_set = {
                     terminal
                     for terminal, rhs in productions.items()
                 }
-
-                # Want to find out if the problem is the top of the stack that parser is expecting, or the token it is currently seeing in the lookahead
             
-                # Input looks reasonable, its possible to take its epsilon instead of expecting more input
                 if lookahead in sync_set or lookahead == "$":
-                    # Skip this non-terminal
                     stack.pop()
-                # Current lookahead makes no sense and cannot end the current non-terminal
                 else:
-                    # Panic-mode: discard tokens until a synchronization point is found.
                     while lookahead not in sync_set and lookahead != "$":
                         advance()
                     stack.pop()
+        else:
+            stack.pop()
+            create_node_func = semantic_actions[top]
+            if create_node_func is None:
+                errors.append(
+                    f"Semantic error at line {line_of_current()}: "
+                    f"unknown semantic action '{top}'."
+                )
+                continue
+            create_node_func(last_matched_token)
+        
     if errors:
         derivation.append("Incomplete derivation due to syntax errors.")
 
     return ParseResult(
         success=not errors,
         errors=errors,
-        derivation=derivation
+        derivation=derivation,
+        ast_stack=list(semantic_stack),
     )
