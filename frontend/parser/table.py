@@ -1,11 +1,11 @@
 table = {
-    # Entry point to the program
+    # used when parsing the start symbol of the program
     "START": {
         "id": ["PROG", "#make_start_subtree"],
         "class": ["PROG", "#make_start_subtree"],
         "main": ["PROG", "#make_start_subtree"]
     },
-    # The program made up of, in order: class declarations, method definitions, and main body.
+    # used when parsing the full program: class declarations, function definitions, and main body
     "PROG": {
         "id": ["#push_epsilon", "REPT_CLASSDECLS", "REPT_FUNCDEFS", "main", "FUNCBODY", "#make_prog_subtree"],
         "class": ["#push_epsilon", "REPT_CLASSDECLS", "REPT_FUNCDEFS", "main", "FUNCBODY", "#make_prog_subtree"],
@@ -13,149 +13,157 @@ table = {
     },
     
     
-    # Parses zero or more class declarations
+    #
+    # Class part of the program
+    #
+    # used when parsing zero or more class declarations
     "REPT_CLASSDECLS": {
         "id": [],
         "class": ["CLASSDECL", "REPT_CLASSDECLS"],
         "main": []
     },
-    # Class declaration with attributes and methohds
+    # used when parsing one class declaration with members
     "CLASSDECL": {
         "class": ["class", "#push_epsilon", "id", "#make_id_node", "OPTCLASSDECL2", "lcurbr", "REPT_CLASS_MEMBERS", "rcurbr", "semi", "#make_classdecl_subtree"]
     },
-    # Optional inheritance clause of class declaration
+    # used when parsing an optional inherits clause in a class declaration
     "OPTCLASSDECL2": {
         "inherits": ["inherits", "id", "#make_id_node", "#make_inherits_subtree", "REPT_INHERITS_TAIL"],
         "lcurbr": []
     },
-    # Parses zero or more inherited classes names separated by commas
+    # used when parsing additional inherited class names after inherits
     "REPT_INHERITS_TAIL": {
         "comma": ["comma", "id", "#make_id_node", "#make_inherits_subtree", "REPT_INHERITS_TAIL"],
         "lcurbr": []
     },
-    # Zero or more member declarations inside class body
+    # used when parsing zero or more class member declarations
     "REPT_CLASS_MEMBERS": {
         "private": ["VISIBILITY", "MEMBERDECL", "REPT_CLASS_MEMBERS"],
         "public": ["VISIBILITY", "MEMBERDECL", "REPT_CLASS_MEMBERS"],
         "rcurbr": []
     },
-    # Class member visibility modifier.
+    # used when parsing a class member visibility modifier
     "VISIBILITY": {
-        "private": ["private", "#make_private_node"], #
-        "public": ["public", "#make_public_node"] #
+        "private": ["private", "#make_private_node"],
+        "public": ["public", "#make_public_node"]
     },
-    # Parses one class member declaration, either data member or method declaration.
+    # used when parsing a class member declaration
     "MEMBERDECL": {
         "id": ["id", "#make_id_node", "MEMBERDECL_DISAMBIG"],
         "float": ["TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_vardecl_subtree"],
         "integer": ["TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_vardecl_subtree"]
     },
-    # Disambiguates class member forms that start with an identifier between variable vs function declaration
+    # used when deciding whether an id-starting member is a variable or function declaration
     "MEMBERDECL_DISAMBIG": {
         "id": ["id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_member_vardecl_subtree"],
         "lpar": ["lpar", "FPARAMS", "rpar", "colon", "RETTYPE", "semi", "#make_member_funcdecl_subtree"]
     },
-    # Zero or more function definitions
+    
+    
+    #
+    # Function definition part of the program
+    #
+    # used when parsing zero or more function definitions
     "REPT_FUNCDEFS": {
         "id": ["FUNCDEF", "REPT_FUNCDEFS"],
         "main": []
     },
-    
-    
-    # Parses a full function definition: header, body, and semicolon
+    # used when parsing a full function definition
     "FUNCDEF": {
         "id": ["#push_epsilon", "FUNCHEAD", "FUNCBODY", "semi", "#make_funcdef_subtree"],
     },
-    # Parses name of the function. Same as the start of MEMBERDECL
+    # used when parsing the start of a function header
     "FUNCHEAD": {
         "id": ["id", "#make_id_node", "FUNCHEAD_TAIL"]
     },
-    # Function header details like scope resolution, params, and return type. Same as the function path in MEMBERDECL_DISAMBIG
+    # used when parsing the rest of a function header
     "FUNCHEAD_TAIL": {
         "lpar": ["lpar", "FPARAMS", "rpar", "colon", "RETTYPE"],
         "sr": ["sr", "id", "#make_id_node", "lpar", "FPARAMS", "rpar", "colon", "RETTYPE"]
     },
-    # Function return type
+    # used when parsing a function return type
     "RETTYPE": {
         "id": ["TYPE"],
         "float": ["TYPE"],
         "integer": ["TYPE"],
         "void": ["void", "#make_void_type_node"]
     },
-    # Type name token
+    # used when parsing a type token
     "TYPE": {
         "id": ["id", "#make_type_node"],
         "float": ["float", "#make_type_node"],
         "integer": ["integer", "#make_type_node"]
     },
-    # Parses the full parameter list in function signature
+    # used when parsing a function parameter list in the function header
     "FPARAMS": {
         "id": ["#push_epsilon", "TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_FPARAM_DIMS", "#make_arraysize_subtree", "#make_fparam_subtree", "REPT_FPARAMS", "#make_fparams_subtree"],
         "float": ["#push_epsilon", "TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_FPARAM_DIMS", "#make_arraysize_subtree", "#make_fparam_subtree", "REPT_FPARAMS", "#make_fparams_subtree"],
         "integer": ["#push_epsilon", "TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_FPARAM_DIMS", "#make_arraysize_subtree", "#make_fparam_subtree", "REPT_FPARAMS", "#make_fparams_subtree"],
         "rpar": ["#make_empty_fparams_node"]
     },
-    # Parses zero or more array dimensions attached to a parameter in a function
+    # used when parsing zero or more array dimensions on a parameter
     "REPT_FPARAM_DIMS": {
         "lsqbr": ["ARRAYSIZE", "REPT_FPARAM_DIMS"],
         "rpar": [],
         "comma": []
     },
-    # Looks for zero or more additional function parameters
+    # used when we want to parse additional function parameters after the first one in the function header
     "REPT_FPARAMS": {
         "rpar": [],
         "comma": ["FPARAMSTAIL", "REPT_FPARAMS"]
     },
-    # Parses additional function parameter separated by a comma
+    # used when parsing a single additional function parameter that's in the function header
     "FPARAMSTAIL": {
         "comma": ["comma", "TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_FPARAMTAIL_DIMS", "#make_arraysize_subtree", "#make_fparam_subtree"]
     },
-    # Zero or more array dimensions on a trailing function parameter
+    # used when parsing array dimensions on a trailing function parameter
     "REPT_FPARAMTAIL_DIMS": {
         "lsqbr": ["ARRAYSIZE", "REPT_FPARAMTAIL_DIMS"],
         "rpar": [],
         "comma": []
     },
-    # Start of one array dimension
+    # used when parsing one array dimension
     "ARRAYSIZE": {
         "lsqbr": ["lsqbr", "ARRAYSIZE_BOUND"]
     },
-    # Parses optional integer inside one array dimension
+    # used when parsing the optional bound inside one array dimension
     "ARRAYSIZE_BOUND": {
         "rsqbr": ["rsqbr"],
         "intnum": ["intnum", "#make_intnum_node", "rsqbr"]
     },
     
-    
-    # Parses a function body with local declarations and statements
+    #
+    # Main program
+    #
+    # used when parsing a function body
     "FUNCBODY": {
         "do": ["#push_epsilon", "OPTFUNCBODY0", "do", "REPT_FUNCBODY_STATEMENTS", "end", "#make_funcbody_subtree"],
         "local": ["#push_epsilon", "OPTFUNCBODY0", "do", "REPT_FUNCBODY_STATEMENTS", "end", "#make_funcbody_subtree"]
     },
-    # Parses the optional local-declaration section
+    # used when parsing the optional local declaration section in a function body
     "OPTFUNCBODY0": {
         "do": [],
         "local": ["local", "REPT_LOCAL_VARDECLS"]
     },
-    # Parses zero or more local variable declarations in a function body
+    # used when parsing zero or more local variable declarations
     "REPT_LOCAL_VARDECLS": {
         "id": ["VARDECL", "REPT_LOCAL_VARDECLS"],
         "float": ["VARDECL", "REPT_LOCAL_VARDECLS"],
         "integer": ["VARDECL", "REPT_LOCAL_VARDECLS"],
         "do": []
     },
-    # Parses a complete variable declaration
+    # used when parsing one variable declaration
     "VARDECL": {
-        "id": ["TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_vardecl_subtree"], #
-        "float": ["TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_vardecl_subtree"], #
-        "integer": ["TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_vardecl_subtree"] #
+        "id": ["TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_vardecl_subtree"],
+        "float": ["TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_vardecl_subtree"],
+        "integer": ["TYPE", "id", "#make_id_node", "#push_epsilon", "REPT_VARDECL_DIMS", "#make_arraysize_subtree", "semi", "#make_vardecl_subtree"]
     },
-    # Parses zero or more array dimensions in a variable declaration
+    # used when parsing zero or more array dimensions in a variable declaration
     "REPT_VARDECL_DIMS": {
         "lsqbr": ["ARRAYSIZE", "REPT_VARDECL_DIMS"],
         "semi": [],
     },
-    # Parses zero or more statements inside a function body 'do' block
+    # used when parsing zero or more statements in a function body do-end block
     "REPT_FUNCBODY_STATEMENTS": {
         "id": ["STATEMENT", "REPT_FUNCBODY_STATEMENTS"],
         "return": ["STATEMENT", "REPT_FUNCBODY_STATEMENTS"],
@@ -165,7 +173,7 @@ table = {
         "if": ["STATEMENT", "REPT_FUNCBODY_STATEMENTS"],
         "end": []
     },
-    # Parses one executable statement
+    # used when parsing one statement
     "STATEMENT": {
         "id": ["#push_epsilon", "id", "#make_id_node", "STATEMENTID", "semi", "#make_statement_subtree"],
         "return": ["#push_epsilon", "return", "lpar", "EXPR", "rpar", "semi", "#make_return_subtree"],
@@ -174,28 +182,28 @@ table = {
         "while": ["#push_epsilon", "while", "lpar", "RELEXPR", "rpar", "STATBLOCK", "semi", "#make_while_subtree"],
         "if": ["#push_epsilon", "if", "lpar", "RELEXPR", "rpar", "then", "STATBLOCK", "else", "STATBLOCK", "semi", "#make_if_subtree"]
     },
-    # Disambiguates statements that start with an id between a var assignment path or a function call path
+    # used when deciding whether an id-starting statement is assignment/variable access or function call
     "STATEMENTID": {
         "lsqbr": ["REPT_VARIABLE_INDICES", "STATEMENTID_VAR_TAIL"],
         "dot": ["REPT_VARIABLE_INDICES", "STATEMENTID_VAR_TAIL"],
         "lpar": ["lpar", "APARAMS", "rpar", "STATEMENTID_CALL_TAIL"],
         "equal": ["REPT_VARIABLE_INDICES", "STATEMENTID_VAR_TAIL"]
     },
-    # Parses rest of variable after a variable identifier statement
+    # used when parsing the variable tail in an id-starting statement
     "STATEMENTID_VAR_TAIL": {
         "dot": ["dot", "id", "#make_id_node", "STATEMENTID"],
         "equal": ["ASSIGNOP", "EXPR"]
     },
-    # Assignment operator token
+    # used when parsing an assignment operator
     "ASSIGNOP": {
         "equal": ["equal", "#make_assignop_node"]
     },
-    # Parses optional member chaining after a function call identifier statement.
+    # used when parsing optional chaining after a function call in a statement
     "STATEMENTID_CALL_TAIL": {
         "dot": ["dot", "id", "#make_id_node", "STATEMENTID"],
         "semi": []
     },
-    # Parses a single statement block including a do-end block
+    # used when parsing a statement block
     "STATBLOCK": {
         "id": ["#push_epsilon", "STATEMENT", "#make_statblock_subtree"],
         "semi": [],
@@ -207,7 +215,7 @@ table = {
         "if": ["#push_epsilon", "STATEMENT", "#make_statblock_subtree"],
         "do": ["#push_epsilon", "do", "REPT_STATEMENTS", "end", "#make_statblock_subtree"]
     },
-    # Parses zero or more statements inside a do-end block
+    # used when parsing zero or more statements in a do-end block
     "REPT_STATEMENTS": {
        "id": ["STATEMENT", "REPT_STATEMENTS"],
        "return": ["STATEMENT", "REPT_STATEMENTS"],
@@ -217,7 +225,7 @@ table = {
        "if": ["STATEMENT", "REPT_STATEMENTS"],
        "end": []
     },
-    # Parses a relational expression with two arithmetic sides and a relational operator
+    # used when parsing a relational expression
     "RELEXPR": {
         "minus": ["#push_epsilon", "ARITHEXPR", "RELOP", "ARITHEXPR", "#make_relexpr_subtree"],
         "plus": ["#push_epsilon", "ARITHEXPR", "RELOP", "ARITHEXPR", "#make_relexpr_subtree"],
@@ -227,7 +235,7 @@ table = {
         "floatnum": ["#push_epsilon", "ARITHEXPR", "RELOP", "ARITHEXPR", "#make_relexpr_subtree"],
         "intnum": ["#push_epsilon", "ARITHEXPR", "RELOP", "ARITHEXPR", "#make_relexpr_subtree"]
     },
-    # Matches a relational comparison operator
+    # used when parsing a relational operator
     "RELOP": {
         "geq": ["geq", "#make_relop_node"],
         "leq": ["leq", "#make_relop_node"],
@@ -236,7 +244,7 @@ table = {
         "neq": ["neq", "#make_relop_node"],
         "eq": ["eq", "#make_relop_node"]
     },
-    # Parses a general expression starting from the expressions first arithmetic expression
+    # used when parsing an expression
     "EXPR": {
         "minus": ["#push_epsilon", "ARITHEXPR", "EXPR_REL_TAIL", "#make_expr_subtree"],
         "plus": ["#push_epsilon", "ARITHEXPR", "EXPR_REL_TAIL", "#make_expr_subtree"],
@@ -246,7 +254,7 @@ table = {
         "floatnum": ["#push_epsilon", "ARITHEXPR", "EXPR_REL_TAIL", "#make_expr_subtree"],
         "intnum": ["#push_epsilon", "ARITHEXPR", "EXPR_REL_TAIL", "#make_expr_subtree"]
     },
-    # Parses the optional relational continuation of an expression
+    # used when parsing the optional relational tail of an expression
     "EXPR_REL_TAIL": {
         "geq": ["RELOP", "ARITHEXPR"],
         "leq": ["RELOP", "ARITHEXPR"],
@@ -258,7 +266,7 @@ table = {
         "semi": [],
         "comma": []
     },
-    # Parses an arithmetic expression made of terms and extra arithmetic expression tails
+    # used when parsing an arithmetic expression
     "ARITHEXPR": {
         "minus": ["#push_epsilon", "TERM", "ARITHEXPR_TAIL", "#make_arithexpr_subtree"],
         "plus": ["#push_epsilon", "TERM", "ARITHEXPR_TAIL", "#make_arithexpr_subtree"],
@@ -268,7 +276,7 @@ table = {
         "floatnum": ["#push_epsilon", "TERM", "ARITHEXPR_TAIL", "#make_arithexpr_subtree"],
         "intnum": ["#push_epsilon", "TERM", "ARITHEXPR_TAIL", "#make_arithexpr_subtree"]
     },
-    # Parses extra added arithmetic expression tail of an arithmetic expression
+    # used when parsing the tail of an arithmetic expression
     "ARITHEXPR_TAIL": {
         "minus": ["ADDOP", "TERM", "ARITHEXPR_TAIL"],
         "plus": ["ADDOP", "TERM", "ARITHEXPR_TAIL"],
@@ -284,7 +292,7 @@ table = {
         "semi": [],
         "comma": []
     },
-    # Parses a term made of factors and multiplicative tails
+    # used when parsing a term. a term is factors joined by *, /, and
     "TERM": {
         "minus": ["#push_epsilon", "FACTOR", "TERM_TAIL", "#make_term_subtree"],
         "plus": ["#push_epsilon", "FACTOR", "TERM_TAIL", "#make_term_subtree"],
@@ -294,7 +302,7 @@ table = {
         "floatnum": ["#push_epsilon", "FACTOR", "TERM_TAIL", "#make_term_subtree"],
         "intnum": ["#push_epsilon", "FACTOR", "TERM_TAIL", "#make_term_subtree"]
     },
-    # Parses the extra multiplicative tail of a term
+    # used when parsing the multiplicative tail of a term
     "TERM_TAIL": {
         "minus": [],
         "plus": [],
@@ -313,7 +321,7 @@ table = {
         "semi": [],
         "comma": []
     },
-    # Parses an expression unit like numbers, floats, ids, function calls, or parenthesized expressions
+    # used when parsing a factor. a factor is a single unit like 2, x, -x
     "FACTOR": {
         "minus": ["SIGN", "FACTOR"],
         "plus": ["SIGN", "FACTOR"],
@@ -323,40 +331,40 @@ table = {
         "floatnum": ["floatnum", "#make_floatnum_node"],
         "intnum": ["intnum", "#make_intnum_node"]
     },
-    # Matches unary plus or unary minus sign
+    # used when parsing a unary sign
     "SIGN": {
-        "minus": ["minus", "#make_minus_node"], #
-        "plus": ["plus", "#make_plus_node"] #
+        "minus": ["minus", "#make_minus_node"],
+        "plus": ["plus", "#make_plus_node"]
     },
-    # Matches math operators used between terms in arithmetic expressions
+    # used when parsing an additive operator
     "ADDOP": {
         "minus": ["minus", "#make_addop_node"],
         "plus": ["plus", "#make_addop_node"],
         "or": ["or", "#make_addop_node"]
     },
-    # Matches multiplicative operators used between factors
+    # used when parsing a multiplicative operator
     "MULTOP": {
         "and": ["and", "#make_multop_node"],
         "div": ["div", "#make_multop_node"],
         "mult": ["mult", "#make_multop_node"]
     },
-    # Parses a variable reference starting from an identifier
+    # used when parsing a variable reference
     "VARIABLE": {
         "id": ["#push_epsilon", "id", "#make_id_node", "VARIABLE_TAIL", "#make_variable_subtree"],
     },
-    # Parses the continuation/tail of a variable reference
+    # used when parsing the tail of a variable reference
     "VARIABLE_TAIL": {
         "lsqbr": ["REPT_VARIABLE_INDICES", "VARIABLE_CHAIN_TAIL"],
         "dot": ["REPT_VARIABLE_INDICES", "VARIABLE_CHAIN_TAIL"],
         "rpar": ["REPT_VARIABLE_INDICES", "VARIABLE_CHAIN_TAIL"],
         "lpar": ["lpar", "APARAMS", "rpar", "dot", "id", "#make_id_node", "VARIABLE_TAIL"]
     },
-    # Parses variable chaining at the variable tail or closes variable reference
+    # used when parsing variable chaining or ending a variable reference
     "VARIABLE_CHAIN_TAIL": {
         "dot": ["dot", "id", "#make_id_node", "VARIABLE_TAIL"],
         "rpar": [],
     },
-    # Parses zero or more index operations after a variable reference
+    # used when parsing zero or more index operations on a variable
     "REPT_VARIABLE_INDICES": {
         "minus": [],
         "plus": [],
@@ -378,11 +386,11 @@ table = {
         "semi": [],
         "comma": []
     },
-    # Parses one array indexing operation '[ expression ]'
+    # used when parsing one array index operation
     "INDICE": {
         "lsqbr": ["lsqbr", "ARITHEXPR", "rsqbr"]
     },
-    # Parses list of arguments in a function call
+    # used when parsing actual parameters in a function call
     "APARAMS": {
         "minus": ["#push_epsilon", "EXPR", "REPT_APARAMS", "#make_aparams_subtree"],
         "plus": ["#push_epsilon", "EXPR", "REPT_APARAMS", "#make_aparams_subtree"],
@@ -393,16 +401,16 @@ table = {
         "floatnum": ["#push_epsilon", "EXPR", "REPT_APARAMS", "#make_aparams_subtree"],
         "intnum": ["#push_epsilon", "EXPR", "REPT_APARAMS", "#make_aparams_subtree"]
     },
-    # Parses zero or more additional arguments of a function call
+    # used when parsing additional actual parameters in a function call
     "REPT_APARAMS": {
         "rpar": [],
         "comma": ["APARAMSTAIL", "REPT_APARAMS"]
     },
-    # Parses an additional function argument separated by commas
+    # used when parsing one trailing actual parameter in a function call after a comma
     "APARAMSTAIL": {
         "comma": ["comma", "EXPR"]
     },
-    # Disambiguates identifier-based factors between variable access and function call forms
+    # used when deciding what comes after id in FACTOR, is it a variable or a function call
     "FACTORID": {
         "minus": ["REPT_VARIABLE_INDICES", "FACTORID_VAR_TAIL"],
         "plus": ["REPT_VARIABLE_INDICES", "FACTORID_VAR_TAIL"],
@@ -424,7 +432,7 @@ table = {
         "semi": ["REPT_VARIABLE_INDICES", "FACTORID_VAR_TAIL"],
         "comma": ["REPT_VARIABLE_INDICES", "FACTORID_VAR_TAIL"]
     },
-    # Parses optional chaining that can follow a variable factor
+    # used when parsing optional chaining after a variable factor
     "FACTORID_VAR_TAIL": {
         "minus": [],
         "plus": [],
@@ -444,7 +452,7 @@ table = {
         "semi": [],
         "comma": []
     },
-    # Parses the optional chaining that can follow a function call factor
+    # used when parsing optional chaining after a function call factor
     "FACTORID_CALL_TAIL": {
         "minus": [],
         "plus": [],
