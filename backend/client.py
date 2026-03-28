@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from backend.symbols import format_diagnostics, format_symbol_table
-from backend.visitors import SymTabCreationVisitor
+from backend.visitors import SemanticCheckingVisitor, SymTabCreationVisitor
 from frontend.lexer.lexer import Lexer
 from frontend.parser.parser import parse
 
@@ -24,17 +24,20 @@ def process_file(src_file: Path, output_dir: Path) -> None:
         print(f"[AST ERROR] {src_file.name} (parser errors: {len(errors)})")
         return
 
-    visitor = SymTabCreationVisitor()
-    result.ast_root.accept(visitor)
+    st_visitor = SymTabCreationVisitor()
+    result.ast_root.accept(st_visitor)
+
+    semantic_visitor = SemanticCheckingVisitor(global_table=st_visitor.global_table)
+    result.ast_root.accept(semantic_visitor)
 
     symbol_text = ""
-    if visitor.global_table is not None:
-        symbol_text = format_symbol_table(visitor.global_table)
-    error_text = format_diagnostics(visitor.diagnostics)
+    if st_visitor.global_table is not None:
+        symbol_text = format_symbol_table(st_visitor.global_table)
+    error_text = format_diagnostics(st_visitor.diagnostics + semantic_visitor.diagnostics)
 
     out_symboltables.write_text(symbol_text, encoding="utf-8")
     out_errors.write_text(error_text, encoding="utf-8")
-    print(f"[OK] Semantic phase 1 completed: {src_file.name}")
+    print(f"[OK] Semantic phases 1-2 completed: {src_file.name}")
 
 
 def main() -> None:

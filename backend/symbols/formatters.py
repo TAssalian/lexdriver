@@ -7,8 +7,9 @@ from backend.symbols.symbol_table import SymbolTable
 # get all the diagnostics found in the table of the <x>CreationVisitor class during the traversal
 def format_diagnostics(diagnostics: list[Diagnostic]) -> str:
     lines = []
-    for diagnostic in diagnostics:
-        lines.append(f"Semantic {diagnostic.severity} at line {diagnostic.line}: {diagnostic.message}")
+    ordered = sorted(diagnostics, key=lambda diagnostic: (diagnostic.line, diagnostic.severity, diagnostic.code))
+    for diagnostic in ordered:
+        lines.append(f"[{diagnostic.severity}] line {diagnostic.line}: {diagnostic.message}")
     return "\n".join(lines)
 
 # print table information, first loop: goes through current table entries, second loop: recursively goes through nested tables and their entries

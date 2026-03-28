@@ -14,7 +14,19 @@ class SymbolTable:
     inherited_class_tables: list[SymbolTable] = field(default_factory=list)
 
     # Return matching entries in this symbol table and any inherited class tables.
-    def lookup(self, name: str | None = None, kinds: set[str] | None = None) -> list[SymbolEntry]:
+    def lookup(
+        self,
+        name: str | None = None,
+        kinds: set[str] | None = None,
+        visited: set[int] | None = None,
+    ) -> list[SymbolEntry]:
+        if visited is None:
+            visited = set()
+        table_id = id(self)
+        if table_id in visited:
+            return []
+        visited.add(table_id)
+
         matches = []
         for entry in self.entries:
             name_matches = name is None or entry.name == name
@@ -22,5 +34,5 @@ class SymbolTable:
             if name_matches and kind_matches:
                 matches.append(entry)
         for symbol_table in self.inherited_class_tables:
-            matches.extend(symbol_table.lookup(name, kinds=kinds))
+            matches.extend(symbol_table.lookup(name, kinds=kinds, visited=visited))
         return matches

@@ -13,7 +13,6 @@ class SymTabCreationVisitor(Visitor):
         self.class_entries_by_name: dict[str, SymbolEntry] = {}
         self.member_functions: dict[tuple[str, str, tuple[str, ...]], dict[str, SymbolEntry | list[FuncDefNode] | None]] = {} # Class method declaration and body definitions grouped by class name, function name, and parameter types in order.
                                                                                                                               # Used in visit_FuncDecl and FuncDef
-        
         # Hold errors and warnings
         self.diagnostics: list[Diagnostic] = []
 
@@ -50,6 +49,7 @@ class SymTabCreationVisitor(Visitor):
         if existing:
             self._diagnostic("error", "multiply_declared_class", f"multiply declared class '{class_name}'.", node)
             node.symtab_entry = existing[0]
+            node.symtab = existing[0].inner_scope_table
             return existing[0].inner_scope_table
 
         # Create symbol table for this class
@@ -85,6 +85,7 @@ class SymTabCreationVisitor(Visitor):
                 node,
             )
             node.symtab_entry = duplicate
+            node.symtab = duplicate.inner_scope_table
             return duplicate.inner_scope_table
 
         if self.current_scope.lookup(entry.name, {"member_function"}):
@@ -132,6 +133,7 @@ class SymTabCreationVisitor(Visitor):
         if duplicate:
             self._diagnostic("error", "multiply_declared_function", f"multiply declared free function '{entry.name}'.", node)
             node.symtab_entry = duplicate
+            node.symtab = duplicate.inner_scope_table
             return duplicate.inner_scope_table
 
         if self.global_table.lookup(entry.name, {"function"}):
@@ -169,7 +171,7 @@ class SymTabCreationVisitor(Visitor):
     def visit_VarDeclNode(self, node: VarDeclNode):
         # Decide if it's a class variable or a local variable
         kind = "local_var"
-        if self.current_scope == "class":
+        if self.current_scope.kind == "class":
             kind = "data_member"
         
         entry = self._make_entry(node, kind)
@@ -229,7 +231,10 @@ class SymTabCreationVisitor(Visitor):
 
     def _visit_function_definition(self, node: FuncDefNode, function_table: SymbolTable) -> None:
         node.symtab = function_table
-        self._visit_in_scope((node.fparams_node, node.func_body_node), function_table)
+        child_nodes = [node.func_body_node]
+        if not function_table.lookup(kinds={"param"}):
+            child_nodes.insert(0, node.fparams_node)
+        self._visit_in_scope(child_nodes, function_table)
 
     # Only used and run after all classes have been linked to the global symbol table. 
     # This is a helper method to have each symbol table internally store the class' tables they inherit from so we could do quick checks...
@@ -250,15 +255,44 @@ class SymTabCreationVisitor(Visitor):
                 if parents_symbol_entry and parents_symbol_entry.inner_scope_table:
                     class_table.inherited_class_tables.append(parents_symbol_entry.inner_scope_table)
             
-            # Throw warning if a data member in child class has the same name a one in the parent class
+            # Throw warnings if members in the child class shadow inherited members.
             for entry in class_table.entries:
-                if entry.kind == "data_member" and class_table.lookup(entry.name, {"data_member"}):
+                inherited_data_members = []
+                inherited_member_functions = []
+                for inherited_table in class_table.inherited_class_tables:
+                    inherited_data_members.extend(
+                        inherited_table.lookup(entry.name, {"data_member"}, visited={id(class_table)})
+                    )
+                    inherited_member_functions.extend(
+                        inherited_table.lookup(entry.name, {"member_function"}, visited={id(class_table)})
+                    )
+
+                if entry.kind == "data_member" and inherited_data_members:
                     self._diagnostic(
                         "warning",
                         "shadowed_inherited_data_member",
                         f"class '{class_table.name}' shadows inherited data member '{entry.name}'.",
                         entry.node,
                     )
+                elif entry.kind == "member_function" and inherited_member_functions:
+                    same_signature = any(
+                        inherited.parameter_types == entry.parameter_types
+                        for inherited in inherited_member_functions
+                    )
+                    if same_signature:
+                        self._diagnostic(
+                            "warning",
+                            "overridden_member_function",
+                            f"overridden member function '{class_table.name}::{entry.name}'.",
+                            entry.node,
+                        )
+                    else:
+                        self._diagnostic(
+                            "warning",
+                            "shadowed_inherited_member_function",
+                            f"class '{class_table.name}' shadows inherited member function '{entry.name}'.",
+                            entry.node,
+                        )
 
     # Only called when creating global table
     # connects a class method's header to the actual body by finding matching declaration/definition pairs
@@ -287,7 +321,7 @@ class SymTabCreationVisitor(Visitor):
                 self._diagnostic(
                     "error",
                     "missing_member_definition",
-                    f"no definition for declared member function '{declaration.owner_class}::{declaration.name}'.",
+                    f"undefined member function declaration '{declaration.owner_class}::{declaration.name}'.",
                     declaration.node,
                 )
 
@@ -296,7 +330,7 @@ class SymTabCreationVisitor(Visitor):
                     self._diagnostic(
                         "error",
                         "undeclared_member_definition",
-                        f"definition provided for undeclared member function '{key[0]}::{key[1]}'.",
+                        f"undeclared member function definition '{key[0]}::{key[1]}'.",
                         definition,
                     )
 

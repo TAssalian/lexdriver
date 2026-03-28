@@ -5,10 +5,11 @@ from backend.symbols import (
     format_diagnostics,
     format_symbol_table,
 )
-from backend.visitors import SymTabCreationVisitor, Visitor
+from backend.visitors import SemanticCheckingVisitor, SymTabCreationVisitor, Visitor
 
 __all__ = [
     "Diagnostic",
+    "SemanticCheckingVisitor",
     "SymbolEntry",
     "SymbolTable",
     "SymTabCreationVisitor",
