@@ -15,7 +15,17 @@ def format_diagnostics(diagnostics: list[Diagnostic]) -> str:
 # print table information, first loop: goes through current table entries, second loop: recursively goes through nested tables and their entries
 def format_symbol_table(table: SymbolTable, indent: int = 0) -> str:
     pad = "  " * indent
-    lines = [f"{pad}Table: {table.name} ({table.kind})", f"{pad}name | kind | type | link"]
+    table_suffix = []
+    if table.kind == "function":
+        table_suffix.append(f"stack_frame_size={table.stack_frame_size}")
+    elif table.kind == "class":
+        table_suffix.append(f"object_size={table.object_size}")
+
+    header = f"{pad}Table: {table.name} ({table.kind})"
+    if table_suffix:
+        header += " [" + ", ".join(table_suffix) + "]"
+
+    lines = [header, f"{pad}name | kind | type | size | offset | link"]
     for entry in table.entries:
         entry_type = entry.type or ""
         if entry.array_dimensions:
@@ -30,7 +40,8 @@ def format_symbol_table(table: SymbolTable, indent: int = 0) -> str:
         if entry.inner_scope_table:
             link_name = entry.inner_scope_table.name
         lines.append(
-            f"{pad}{entry.name} | {entry.kind} | {entry_type} | {link_name}"
+            f"{pad}{entry.name} | {entry.kind} | {entry_type} | {entry.size} | "
+            f"{'' if entry.offset is None else entry.offset} | {link_name}"
         )
     lines.append(f"{pad}" + "-" * 40)
     for entry in table.entries:
