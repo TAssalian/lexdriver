@@ -53,7 +53,6 @@ class SymTabCreationVisitor(Visitor):
             inner_scope_table=class_table,
             node=node,
         )
-        class_table.owner_entry = entry
         self.current_scope.entries.append(entry) 
         self.class_entries_by_name[class_name] = entry
         node.symtab_entry = entry
@@ -91,7 +90,6 @@ class SymTabCreationVisitor(Visitor):
         function_table = SymbolTable(f"{self.current_scope.name}::{entry.name}", "function", parent_scope=self.current_scope)
         node.symtab = function_table
         entry.inner_scope_table = function_table
-        function_table.owner_entry = entry
         
         self.current_scope.entries.append(entry)
         node.symtab_entry = entry
@@ -138,7 +136,6 @@ class SymTabCreationVisitor(Visitor):
         function_table = SymbolTable(entry.name, "function", parent_scope=self.global_table)
         node.symtab = function_table
         entry.inner_scope_table = function_table
-        function_table.owner_entry = entry
         
         self.global_table.entries.append(entry)
         node.symtab_entry = entry
@@ -214,7 +211,6 @@ class SymTabCreationVisitor(Visitor):
             inner_scope_table=function_table,
             node=node,
         )
-        function_table.owner_entry = entry
         self.global_table.entries.append(entry)
         node.symtab_entry = entry
         node.symtab = function_table
