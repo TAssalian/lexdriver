@@ -36,7 +36,7 @@ invalid_tokens = {
 class ParseResult:
     success: bool
     errors: list[str]
-    derivation: list[str]
+    derivation: list[str] # Total derivation history
     ast_root: StartNode | None = None
 
 
@@ -70,7 +70,8 @@ def _expected_lookaheads(non_terminal: str) -> str:
         return ", ".join(expected)
     return "<none>"
 
-
+# Update current sentential form for derivation tracing
+# Finds the non-terminal that is being replaced by a rhs and returning new sentential form
 def _apply_leftmost_step(form: list[str], non_terminal: str, rhs: list[str]) -> list[str]:
     for i, symbol in enumerate(form):
         if symbol == non_terminal:
@@ -143,7 +144,7 @@ def parse(lexer: Lexer) -> ParseResult:
                 errors.append(
                     f"Syntax error at line {line_of_current()}: "
                     f"unexpected {_describe_token(token)} while parsing {top}; "
-                    f"expected one of: {_expected_lookaheads(top)}."
+                    f"expected: {_expected_lookaheads(top)}."
                 )
 
                 sync_set = set()
@@ -173,9 +174,6 @@ def parse(lexer: Lexer) -> ParseResult:
     ast_root = None
     if semantic_stack:
         ast_root = semantic_stack[-1]
-    if ast_root is not None and not isinstance(ast_root, StartNode):
-        errors.append("Semantic error: parse completed without a StartNode root.")
-        ast_root = None
 
     return ParseResult(
         success=not errors,

@@ -80,7 +80,8 @@ def _build_expression(children, operator_type):
         root = children[index]
         index += 1
 
-        while index < len(children) and not isinstance(children[index], operator_type): # attach non-operator nodes to root until next operator is encountered
+        # continue building rhs until we reach operator node
+        while index < len(children) and not isinstance(children[index], operator_type):
             root.add_child(children[index])
             index += 1
     
@@ -88,7 +89,7 @@ def _build_expression(children, operator_type):
         operator = children[index] # guaranteed to be next operator because while loops above stop
         index += 1
 
-        # read the right hand side of the operand
+        # get rhs and check if its unary or not
         if isinstance(children[index], (MinusNode, PlusNode, NotNode)): # make unary operator the right subtree root
             right = children[index]
             index += 1
@@ -101,11 +102,11 @@ def _build_expression(children, operator_type):
                     index += 1
 
                 right.add_child(operand)
-        else: # else, next child is right subtree root
+        else:
             right = children[index]
             index += 1
 
-            while index < len(children) and not isinstance(children[index], operator_type):
+            while index < len(children) and not isinstance(children[index], operator_type): # gets all the non-operator types to get full rhs expression
                 right.add_child(children[index])
                 index += 1
 

@@ -29,23 +29,20 @@ from frontend.ast.nodes import (
 
 
 class SemanticCheckingVisitor(Visitor):
-    # Initialize the semantic checker with the already-built global symbol table and traversal state used while descending into classes/functions
-    def __init__(self, global_table: SymbolTable | None = None) -> None:
-        self.global_table = global_table # Take the global table to look at the structure of the program
-        self.current_scope: SymbolTable | None = global_table
+    def __init__(self) -> None:
+        self.global_table: SymbolTable | None = None
+        self.current_scope: SymbolTable | None = None
         self.current_function: SymbolEntry | None = None
-        self.current_class: SymbolTable | None = None
+        self.current_class: SymbolTable | None = None # SymbolTable of the class whose member function body we are currently inside
         self.diagnostics: list[Diagnostic] = []
 
     def visit_ProgNode(self, node: ProgNode):
         self.global_table = node.symtab
         self.current_scope = self.global_table
-        self._check_main_function()
-        self._check_circular_class_dependencies() # Reject inheritance and/or member-type cycles before normal traversal
+        self._check_circular_classes() # Reject inheritance and/or member-type cycles before normal traversal
         self.visit_children(node)
         return None
 
-    # Validate inherited class names, switch into the class scope, and then check each member declaration and definition with that class context symbol table
     def visit_ClassDeclNode(self, node: ClassDeclNode):
         # Check for undeclared inherited class
         for inherits_node in node.inherits:
@@ -60,52 +57,48 @@ class SemanticCheckingVisitor(Visitor):
 
         class_table = node.symtab
         previous_scope = self.current_scope
-        self.current_scope = class_table # Class member declarations are checked inside the class scope
+        self.current_scope = class_table
         for member in node.members:
             member.accept(self)
-        self.current_scope = previous_scope # Restore the enclosing scope after leaving the class body
+        self.current_scope = previous_scope
         return None
 
     # Check the declared return type and visit parameter declarations inside the function's scope, but without a function body because this is only a declaration
     def visit_FuncDeclNode(self, node: FuncDeclNode):
-        # Check if the type exists
-        self._check_type_name(node.return_type_node.token.lexeme, node.return_type_node)
+        self._check_type_exists(node.return_type_node.token.lexeme, node.return_type_node)
         
         function_table = node.symtab
         previous_scope = self.current_scope
-        self.current_scope = function_table # Parameters must be validated in the function-local scope
-        node.fparams_node.accept(self) # Go to the FParamsNode of this FuncDeclNode, which goes through and checks the types of each parameter in the function table for their existence
+        self.current_scope = function_table
+        node.fparams_node.accept(self)
         self.current_scope = previous_scope
         return None
 
     # Enter a function definition, establish its local/function/class context, then validate parameters and the body before restoring the previous traversal state
     def visit_FuncDefNode(self, node: FuncDefNode):
-        self._check_type_name(type_name=node.return_type_node.token.lexeme, node=node.return_type_node)
+        self._check_type_exists(type_name=node.return_type_node.token.lexeme, node=node.return_type_node)
         function_table = node.symtab
         
         previous_scope = self.current_scope
         previous_function = self.current_function
         previous_class = self.current_class
 
-        self.current_scope = function_table # To see local variables and parameters of function
+        self.current_scope = function_table
         self.current_function = node.symtab_entry # Needed for return-statement type checking
         
         if function_table and function_table.parent_scope and function_table.parent_scope.kind == "class":
-            self.current_class = function_table.parent_scope # Member function definitions also need their owning class context
+            self.current_class = function_table.parent_scope # Member function definitions also need their owning class context for inherited members
         else:
             self.current_class = None # Free functions should not resolve data members implicitly
 
         node.fparams_node.accept(self)
         node.func_body_node.accept(self)
 
-    # Restore the caller's context after finishing this function body
         self.current_scope = previous_scope
         self.current_function = previous_function
         self.current_class = previous_class
         return None
 
-    # Program blocks represent the main/global executable block, so this method
-    # swaps into its scope and function entry for the duration of the block
     def visit_ProgramBlockNode(self, node: ProgramBlockNode):
         previous_scope = self.current_scope
         previous_function = self.current_function
@@ -120,39 +113,31 @@ class SemanticCheckingVisitor(Visitor):
         self.current_class = previous_class
         return None
 
-    # Visit each formal parameter so declared parameter types are validated
-    def visit_FParamsNode(self, node: FParamsNode):
-        for param in node.params:
-            param.accept(self)
-        return None
-
-    # Validate the type named by a single formal parameter
     def visit_FParamNode(self, node: FParamNode):
-        self._check_type_name(node.type_node.token.lexeme, node.type_node)
+        self._check_type_exists(node.type_node.token.lexeme, node.type_node)
         return None
 
-    # Report if declared variable is of a valid type (If type exists like a Class). Writes to errors if not valid
     def visit_VarDeclNode(self, node: VarDeclNode):
-        self._check_type_name(node.type_node.token.lexeme, node.type_node)
+        self._check_type_exists(node.type_node.token.lexeme, node.type_node)
         return None
 
     # Distinguish between expression statements and assignment statements, then resolve the left/right sides and enforce assignment compatibility
     # Expression statement: A call without '=' character
     # Assignment statement: Something with '=' character
     def visit_StatementNode(self, node: StatementNode):
-        children = list(node.iter_children()) # Flatten the statement so chained ids/indexes/calls can be resolved uniformly
+        children = list(node.iter_children())
         assign_index = None
         for index, child in enumerate(children):
             if isinstance(child, AssignOpNode):
                 assign_index = index
                 break
 
-        if assign_index is None:
-            self._resolve_chain(children, node, expect_callable=True) # A statement with no assignment operator must resolve to a function/method call, else it's not a valid statement and error is reported
+        if assign_index is None: # Not assignment statement
+            self._resolve_chain(children, node)
             return None
 
-        left_type = self._resolve_chain(children[:assign_index], node, expect_callable=False) # Resolve the l-value chain up to the assignment operator
-        right_type = children[assign_index + 1].accept(self) # Infer the assigned expression's type
+        left_type = self._resolve_chain(children[:assign_index], node) # Is an id-started reference chain stored as multiple children of StatementNode
+        right_type = children[assign_index + 1].accept(self) # Is a single EXPR node following the AssignOpNode
         if left_type is not None and right_type is not None and not self._is_assignable(left_type, right_type):
             self._diagnostic(
                 "error",
@@ -162,13 +147,13 @@ class SemanticCheckingVisitor(Visitor):
             )
         return None
 
-    # Compare the returned expression type with the enclosing function's declared
-    # return type and report a mismatch
+    # Compare returned type to the enclosing function's declared type
     def visit_ReturnNode(self, node: ReturnNode):
-        expr = node.first_child
-        expr_type = expr.accept(self) if expr is not None else "void" # A missing expression is treated as returning void
-        expected_type = self.current_function.type if self.current_function is not None else None # Return checking only makes sense inside a function
-        if expr_type is not None and expected_type is not None and not self._is_assignable(expected_type, expr_type):
+        expr_type = node.first_child.accept(self)
+        if self.current_function is None:
+            return None
+        expected_type = self.current_function.type
+        if expr_type is not None and not self._is_assignable(expected_type, expr_type):
             self._diagnostic(
                 "error",
                 "type_error_return_statement",
@@ -177,22 +162,20 @@ class SemanticCheckingVisitor(Visitor):
             )
         return None
 
-    # Resolve a variable chain such as x, a[i], obj.field, or obj.method().field
+    # Appears on lhs
     def visit_VariableNode(self, node: VariableNode):
-        node.inferred_type = self._resolve_chain(list(node.iter_children()), node, expect_callable=False)
+        node.inferred_type = self._resolve_chain(list(node.iter_children()), node)
         return node.inferred_type
 
-    # Resolve a standalone identifier node using the same chain machinery used by variables and statements so nested children are handled consistently
+    # Appears on rhs
     def visit_IdNode(self, node: IdNode):
-        node.inferred_type = self._resolve_chain([node, *node.iter_children()], node, expect_callable=False)
+        node.inferred_type = self._resolve_chain([node, *node.iter_children()], node)
         return node.inferred_type
 
-    # Integer literals always infer the built-in integer type
     def visit_IntNumNode(self, node: IntNumNode):
         node.inferred_type = "integer"
         return node.inferred_type
 
-    # Float literals always infer the built-in float type
     def visit_FloatNumNode(self, node: FloatNumNode):
         node.inferred_type = "float"
         return node.inferred_type
@@ -202,57 +185,40 @@ class SemanticCheckingVisitor(Visitor):
         types = []
         for arg in node.args:
             types.append(arg.accept(self))
-        node.argument_types = types # Persist the argument types so other phases/debugging can inspect them
         return types
 
-    # Index nodes do not produce a type directly; they simply ensure their index
-    # expressions are visited so later checks have inferred types available
-    def visit_IndexNode(self, node: IndexNode):
-        for child in node.iter_children():
-            child.accept(self)
-        return None
-
-    # Unary minus is allowed only on numeric operands
     def visit_MinusNode(self, node: MinusNode):
-        return self._visit_unary(node, allowed_types={"integer", "float"})
+        return self._get_unary_type(node, allowed_types={"integer", "float"})
 
-    # Unary plus is allowed only on numeric operands
     def visit_PlusNode(self, node: PlusNode):
-        return self._visit_unary(node, allowed_types={"integer", "float"})
+        return self._get_unary_type(node, allowed_types={"integer", "float"})
 
-    # Logical not uses the language's integer-as-boolean convention
     def visit_NotNode(self, node: NotNode):
-        return self._visit_unary(node, allowed_types={"integer"})
+        return self._get_unary_type(node, allowed_types={"integer"})
 
-    # Addition/subtraction-style operators either act as integer logical-or or as
-    # standard numeric arithmetic depending on the token lexeme
     def visit_AddOpNode(self, node: AddOpNode):
         operator = node.token.lexeme
         if operator == "or":
-            return self._visit_binary(node, allowed_types={"integer"}, result_type="integer")
-        return self._visit_binary(node, allowed_types={"integer", "float"})
-
-    # Multiplication-style operators either act as integer logical-and or as
-    # standard numeric arithmetic depending on the token lexeme
+            return self._get_binary_type(node, allowed_types={"integer"}, result_type="integer")
+        return self._get_binary_type(node, allowed_types={"integer", "float"})
+    
     def visit_MultOpNode(self, node: MultOpNode):
         operator = node.token.lexeme
         if operator == "and":
-            return self._visit_binary(node, allowed_types={"integer"}, result_type="integer")
-        return self._visit_binary(node, allowed_types={"integer", "float"})
+            return self._get_binary_type(node, allowed_types={"integer"}, result_type="integer")
+        return self._get_binary_type(node, allowed_types={"integer", "float"})
 
-    # Relational operators require numeric operands and always yield an integer
-    # truth value in this language
     def visit_RelOpNode(self, node: RelOpNode):
-        left = node.first_child.accept(self)
-        right = node.first_child.next_sibling.accept(self)
-        if left is None or right is None:
+        left_type = node.first_child.accept(self)
+        right_type = node.first_child.next_sibling.accept(self)
+        if left_type is None or right_type is None:
             node.inferred_type = None
             return None
-        if not self._is_numeric_operand(left) or not self._is_numeric_operand(right) or left != right:
+        if not self._is_numeric_operand(left_type) or not self._is_numeric_operand(right_type) or left_type != right_type:
             self._diagnostic(
                 "error",
                 "type_error_expression",
-                f"type error in expression: incompatible operands '{left}' and '{right}'.",
+                f"type error in expression: incompatible operands '{left_type}' and '{right_type}'.",
                 node,
             )
             node.inferred_type = None
@@ -260,28 +226,24 @@ class SemanticCheckingVisitor(Visitor):
         node.inferred_type = "integer"
         return node.inferred_type
 
-    # Shared helper for unary operators: infer the operand type, validate it
-    # against the allowed set, and propagate the resulting type
-    def _visit_unary(self, node, allowed_types: set[str]):
-        operand = node.first_child.accept(self) if node.first_child is not None else None
-        if operand is None:
+    def _get_unary_type(self, node, allowed_types: set[str]):
+        operand_type = node.first_child.accept(self)
+        if operand_type is None:
             node.inferred_type = None
             return None
-        if operand not in allowed_types:
+        if operand_type not in allowed_types:
             self._diagnostic(
                 "error",
                 "type_error_expression",
-                f"type error in expression: invalid operand type '{operand}'.",
+                f"type error in expression: invalid operand type '{operand_type}'.",
                 node,
             )
             node.inferred_type = None
             return None
-        node.inferred_type = operand
+        node.inferred_type = operand_type
         return node.inferred_type
 
-    # Shared helper for binary operators: infer both operand types, require exact
-    # type agreement, and cache the result type
-    def _visit_binary(self, node, allowed_types: set[str], result_type: str | None = None):
+    def _get_binary_type(self, node, allowed_types: set[str], result_type: str | None = None):
         left = node.first_child.accept(self)
         right = node.first_child.next_sibling.accept(self)
         if left is None or right is None:
@@ -300,95 +262,63 @@ class SemanticCheckingVisitor(Visitor):
         node.inferred_type = result_type or left
         return node.inferred_type
 
-    # Left to right resolver for statements
-    def _resolve_chain(self, children, owner_node, expect_callable: bool) -> str | None:
+    # Get type of a chained reference specifically for id/member/function call chains. Arithmetic expressions are by the OpNodes
+    def _resolve_chain(self, children, owner_node) -> str | None:
         current_type = None # Holds the type of the resolved chain 
         current_entry = None # Type of previously resolved segment to check type compatibility later
-        current_class_table = None  # Tracks if the result is a class type
         is_call = False # Remembers if most recent segment was a function call
         index = 0 # To go through the list of children
 
-        # Go one index/child at a time
         while index < len(children):
-            # Gets the name of the segment/child and goes to next
             id_node = children[index]
             name = id_node.token.lexeme
             index += 1
 
-            # Collects IndexNodes in case it's an array until there are no longer any IndexNodes
             indices = []
             while index < len(children) and isinstance(children[index], IndexNode):
-                indices.append(children[index]) # Collect any array indexing that immediately follows this identifier
+                indices.append(children[index]) 
                 index += 1
 
-            # Check if its being called as a function. If the next node is AParamsNode, it stores the params the function is being called with
             call_node = None
             if index < len(children) and isinstance(children[index], AParamsNode):
-                call_node = children[index] # An argument list means this identifier is being called
+                call_node = children[index] 
                 index += 1
 
-            # Bunch of conditional statements to determine, after all of this information, what is it that we are calling?
-            
-            if current_type is None: # First segment in the chain
-                if call_node is not None: # We have a function call, so call _resolve_initial_call which tries member functions of current class and then free functions
+            if current_type is None:
+                if call_node is not None:
                     current_entry = self._resolve_initial_call(name, call_node, id_node)
                     is_call = True
-                else: # If not a call, then its an id where we search if its local variable or param first, then if its a data member of the class
+                else: 
                     current_entry = self._resolve_identifier(name, id_node)
                     is_call = False
             
-            # A previous segment was already resolved, so segment must be accessed relative to that previous resolved type
             else:
-                if call_node is not None: # Doing a member function call on the previous result/object
-                    current_entry = self._resolve_member_call(current_type, name, call_node, id_node) #
+                if call_node is not None: 
+                    current_entry = self._resolve_member_call(current_type, name, call_node, id_node) 
                     is_call = True
-                else: # Member variable access
+                else: 
                     current_entry = self._resolve_member_variable(current_type, name, id_node)
                     is_call = False
 
-            # If we couldn't resolve it, stop since the whole chain is invalid.
             if current_entry is None:
                 setattr(owner_node, "inferred_type", None)
                 return None
 
             id_node.symtab_entry = current_entry
-            id_node.inferred_type = self._entry_type(current_entry) # Cache the composed type on the identifier itself
+            id_node.inferred_type = self._entry_type(current_entry) 
             current_type = self._entry_type(current_entry)
-            current_class_table = self._class_table_for_type(current_type) # Needed to know whether another dot-access is legal
-
             if not is_call:
-                current_type = self._apply_indices(current_entry, current_type, indices, id_node) # Array indexing peels away dimensions from the resolved type
+                current_type = self._remove_indices(current_entry, indices, id_node)
                 id_node.inferred_type = current_type
 
             if call_node is not None:
-                call_node.inferred_type = current_type # Store the call result type on the argument-list node too
+                call_node.inferred_type = current_type
 
-            if (current_class_table is None or self._dimensions(current_type)) and index < len(children):
-                self._diagnostic(
-                    "error",
-                    "invalid_dot_operator_member_access",
-                    f"invalid dot operator member access on non-class type '{current_type}'.",
-                    id_node,
-                )
-                setattr(owner_node, "inferred_type", None)
-                return None
-
-        if current_entry is not None and self._dimensions(current_type) and not self._allows_array_reference(owner_node):
+        if current_entry is not None and self._get_str_dimensions_list(current_type) and not self._allows_array_reference(owner_node):
             self._diagnostic(
                 "error",
                 "wrong_array_dimensionality",
                 f"wrong array dimensionality for '{current_entry.name}'.",
-                children[0],
-            )
-            setattr(owner_node, "inferred_type", None)
-            return None
-
-        if expect_callable and not is_call:
-            # Expression statements are only valid when they end in a call
-            self._diagnostic(
-                "error",
-                "undeclared_undefined_free_function",
-                f"undeclared or undefined free function '{children[0].token.lexeme}'.",
                 children[0],
             )
             setattr(owner_node, "inferred_type", None)
@@ -399,15 +329,15 @@ class SemanticCheckingVisitor(Visitor):
             owner_node.symtab_entry = current_entry
         return current_type
 
-    # Resolve an identifier in the current local/function scope first, then in the current class scope as an implicit data-member access
+    # Resolve entry of first identifier in a chained expression. Check in the current local/function scope first, then in the current class scope bc of data member inheritance
     def _resolve_identifier(self, name: str, node: IdNode) -> SymbolEntry | None:
         entry = None
         if self.current_scope is not None:
-            locals_found = self.current_scope.lookup(name, {"param", "local_var"}) # Parameters and locals shadow class members
+            locals_found = self.current_scope.lookup(name, {"param", "local_var"}) 
             if locals_found:
                 entry = locals_found[0]
         if entry is None and self.current_class is not None:
-            members = self.current_class.lookup(name, {"data_member"}) # Member functions are not valid as plain variable references here
+            members = self.current_class.lookup(name, {"data_member"})
             if members:
                 entry = members[0]
         if entry is None:
@@ -444,7 +374,7 @@ class SemanticCheckingVisitor(Visitor):
 
     # Resolve obj.field after the owner expression has already been typed
     def _resolve_member_variable(self, owner_type: str, name: str, node: IdNode) -> SymbolEntry | None:
-        if self._dimensions(owner_type):
+        if self._get_str_dimensions_list(owner_type):
             self._diagnostic(
                 "error",
                 "invalid_dot_operator_member_access",
@@ -452,7 +382,7 @@ class SemanticCheckingVisitor(Visitor):
                 node,
             )
             return None
-        class_table = self._class_table_for_type(owner_type) # Translate the owner type name into its class symbol table
+        class_table = self._get_class_table_for_type(owner_type) # Translate the owner type name into its class symbol table
         if class_table is None:
             self._diagnostic(
                 "error",
@@ -474,7 +404,7 @@ class SemanticCheckingVisitor(Visitor):
 
     # Resolve obj.method(args) after the owner expression has already been typed
     def _resolve_member_call(self, owner_type: str, name: str, call_node: AParamsNode, node: IdNode) -> SymbolEntry | None:
-        if self._dimensions(owner_type):
+        if self._get_str_dimensions_list(owner_type):
             self._diagnostic(
                 "error",
                 "invalid_dot_operator_member_access",
@@ -482,7 +412,7 @@ class SemanticCheckingVisitor(Visitor):
                 node,
             )
             return None
-        class_table = self._class_table_for_type(owner_type)
+        class_table = self._get_class_table_for_type(owner_type)
         if class_table is None:
             self._diagnostic(
                 "error",
@@ -514,7 +444,7 @@ class SemanticCheckingVisitor(Visitor):
             return None
 
         expected_count = len(argument_types)
-        same_arity = [candidate for candidate in candidates if len(candidate.parameter_types) == expected_count] # Arity mismatch is reported before type mismatch
+        same_arity = [candidate for candidate in candidates if len(candidate.parameter_types) == expected_count] # Filter same function names by same num of arguments
         if not same_arity:
             self._diagnostic(
                 "error",
@@ -529,21 +459,9 @@ class SemanticCheckingVisitor(Visitor):
             return None
 
         for candidate in same_arity:
-            if self._argument_lists_match(candidate.parameter_types, concrete_argument_types):
+            if self._argument_lists_match(candidate.parameter_types, concrete_argument_types): # Check if every type of parameter matches
                 node.symtab_entry = candidate
                 return candidate
-
-        if any(
-            self._has_array_dimension_mismatch(candidate.parameter_types, concrete_argument_types)
-            for candidate in same_arity
-        ):
-            self._diagnostic(
-                "error",
-                "array_parameter_wrong_number_of_dimensions",
-                f"array parameter using wrong number of dimensions for '{same_arity[0].name}'.",
-                node,
-            )
-            return None
 
         self._diagnostic(
             "error",
@@ -553,8 +471,8 @@ class SemanticCheckingVisitor(Visitor):
         )
         return None
 
-    # Apply every array index in a chain segment, ensuring each index expression is an integer and that the number of indexes does not exceed the declared rank
-    def _apply_indices(self, entry: SymbolEntry, current_type: str, indices: list[IndexNode], node) -> str | None:
+    # Apply every array index in a chain segment, ensuring each index expression is an integer and that the number of indexes does not exceed the declared num of indices
+    def _remove_indices(self, entry: SymbolEntry, indices: list[IndexNode], node) -> str | None:
         dimensions = list(entry.array_dimensions) # Work from the declared array shape stored on the symbol entry
         if len(indices) > len(dimensions):
             self._diagnostic(
@@ -566,9 +484,7 @@ class SemanticCheckingVisitor(Visitor):
             return None
 
         for index_node in indices:
-            index_type = None
-            for child in index_node.iter_children():
-                index_type = child.accept(self) # Index nodes usually contain a single expression child
+            index_type = index_node.first_child.accept(self)
             if index_type != "integer":
                 self._diagnostic(
                     "error",
@@ -578,82 +494,43 @@ class SemanticCheckingVisitor(Visitor):
                 )
                 return None
 
-        remaining_dimensions = dimensions[len(indices):] # Each successful index removes one array dimension from the resulting type
-        return self._compose_type(entry.type, remaining_dimensions)
+        remaining_get_str_dimensions_list = dimensions[len(indices):] # Each successful index removes one array dimension from the resulting type
+        return self._compose_type(entry.type, remaining_get_str_dimensions_list)
 
-    # Compare two parameter lists using the same exact-type compatibility rules
-    # used for assignments and returns
+    # Compare two parameter lists using the same exact-type compatibility rules to see if theyre the same
     def _argument_lists_match(self, expected_types: list[str], actual_types: list[str]) -> bool:
         if len(expected_types) != len(actual_types):
             return False
         return all(self._is_assignable(expected, actual) for expected, actual in zip(expected_types, actual_types))
 
-    def _has_array_dimension_mismatch(self, expected_types: list[str], actual_types: list[str]) -> bool:
-        if len(expected_types) != len(actual_types):
-            return False
-        found_dimension_mismatch = False
-        for expected, actual in zip(expected_types, actual_types):
-            expected_dims = self._dimensions(expected)
-            actual_dims = self._dimensions(actual)
-            if not expected_dims and not actual_dims:
-                if expected != actual:
-                    return False
-                continue
-            if self._base_type(expected) != self._base_type(actual):
-                return False
-            if len(expected_dims) != len(actual_dims):
-                found_dimension_mismatch = True
-                continue
-            if not self._is_assignable(expected, actual):
-                return False
-        return found_dimension_mismatch
-
-    # Central type-compatibility rule used for assignments, returns, and argument passing. It supports exact matches and array-shape checks only
+    # Type-compatibility rule used for assignments, returns, and argument passing.
     def _is_assignable(self, target_type: str | None, source_type: str | None) -> bool:
-        if target_type is None or source_type is None:
-            return False
         if target_type == source_type:
             return True
 
-        target_dims = self._dimensions(target_type)
-        source_dims = self._dimensions(source_type)
+        target_dims = self._get_str_dimensions_list(target_type)
+        source_dims = self._get_str_dimensions_list(source_type)
         if target_dims or source_dims:
-            if self._base_type(target_type) != self._base_type(source_type): # Array element base types must match exactly
+            if self._get_base_type(target_type) != self._get_base_type(source_type): # Array element base types must match exactly
                 return False
             if len(target_dims) != len(source_dims):
                 return False
             for expected_dim, actual_dim in zip(target_dims, source_dims):
-                if expected_dim and actual_dim and expected_dim != actual_dim: # Unspecified dimensions behave like wildcards
+                if expected_dim and actual_dim and expected_dim != actual_dim:
                     return False
             return True
 
         return False
 
-    # Return whether a type can participate in numeric operators. Arrays are wxcluded even if their base type is numeric
+    # Return whether a type can participate in numeric operators. Arrays are excluded even if their base type is numeric
     def _is_numeric_operand(self, type_name: str | None) -> bool:
-        return self._base_type(type_name) in {"integer", "float"} and not self._dimensions(type_name)
+        return self._get_base_type(type_name) in {"integer", "float"} and not self._get_str_dimensions_list(type_name)
 
-    # Validate that a referenced type name is either built in or a previously declared class visible from the global symbol table
-    def _check_type_name(self, type_name: str, node) -> None:
-        if type_name in {"integer", "float", "void"}:
+    def _check_type_exists(self, type_name: str, node) -> None:
+        if type_name in {"integer", "float", "void"}: # Built-in data type
             return
-        if self._lookup_class(type_name) is None:
+        if self._lookup_class(type_name) is None: # Data type is of a class
             self._diagnostic("error", "undeclared_class", f"undeclared class '{type_name}'.", node)
-
-    # The grammar should produce exactly one program block that becomes the sole main function entry. Check the global table anyway so malformed ASTs or future grammar changes do not silently violate the semantic contract
-    def _check_main_function(self) -> None:
-        if self.global_table is None:
-            return
-        main_entries = self.global_table.lookup("main", {"function"})
-        if len(main_entries) != 1:
-            node = self.global_table.entries[0].node if self.global_table.entries else None
-            if node is not None:
-                self._diagnostic(
-                    "error",
-                    "invalid_main_function_count",
-                    f"program must contain exactly one main function, found {len(main_entries)}.",
-                    node,
-                )
 
     # Lookup a class entry by name in the global symbol table
     def _lookup_class(self, class_name: str) -> SymbolEntry | None:
@@ -664,14 +541,13 @@ class SemanticCheckingVisitor(Visitor):
             return None
         return classes[0]
 
-    # Convert a type name into the symbol table for that class so member access can search its fields and methods
-    def _class_table_for_type(self, type_name: str) -> SymbolTable | None:
-        class_entry = self._lookup_class(self._base_type(type_name))
+    # Get the class table based on the Class type of the object we're currently at
+    def _get_class_table_for_type(self, type_name: str) -> SymbolTable | None:
+        class_entry = self._lookup_class(self._get_base_type(type_name))
         if class_entry is None:
             return None
         return class_entry.inner_scope_table
 
-    # Rebuild the full source-language type string from a symbol-table entry
     def _entry_type(self, entry: SymbolEntry) -> str:
         return self._compose_type(entry.type, entry.array_dimensions)
 
@@ -687,14 +563,14 @@ class SemanticCheckingVisitor(Visitor):
                 suffix.append(f"[{dimension}]")
         return f"{base_type}{''.join(suffix)}"
 
-    # Strip any array suffix from a type string and return just the base type
-    def _base_type(self, type_name: str | None) -> str | None:
+    # Get type while stripping array suffix
+    def _get_base_type(self, type_name: str | None) -> str | None:
         if type_name is None:
             return None
         return type_name.split("[", 1)[0]
 
-    # Parse the bracketed dimensions from a type string so array compatibility and indexing can reason about rank and declared sizes
-    def _dimensions(self, type_name: str | None) -> list[str]:
+    # Returns list of dimensions as string numbers without the square brackets
+    def _get_str_dimensions_list(self, type_name: str | None) -> list[str]:
         if type_name is None:
             return []
         dimensions = []
@@ -709,46 +585,39 @@ class SemanticCheckingVisitor(Visitor):
     def _allows_array_reference(self, owner_node) -> bool:
         return isinstance(getattr(owner_node, "parent", None), AParamsNode)
 
-    # Build a dependency graph between classes based on inheritance and class-typed data members, then run DFS to detect cycles and report each class involved
-    def _check_circular_class_dependencies(self) -> None:
-        graph: dict[str, set[str]] = {}
-        # For each class entry, get its dependencies
+    def _check_circular_classes(self) -> None:
+        graph: dict[str, set[str]] = {} # Maps classes to their dependencies (inherited classes or class-members whose type is another class)
         for class_entry in self.global_table.lookup(kinds={"class"}):
-            dependencies = set()
+            inherited_classes = set()
             class_node = class_entry.node
             
-            # Getting dependencies through inherited classes
             for inherits_node in class_node.inherits:
-                dependencies.add(inherits_node.id_node.token.lexeme) # Inheriting from a class creates a dependency edge
+                inherited_classes.add(inherits_node.id_node.token.lexeme)
             
-            # Get the members of this same class to check for dependencies on class-typed data members
             class_table = class_entry.inner_scope_table
             for member in class_table.lookup(kinds={"data_member"}):
                 member_type = member.type
-                if member_type not in {"integer", "float", "void"} and member_type != class_entry.name:
-                    dependencies.add(member_type) # Class-typed fields also create dependencies
-                elif member_type == class_entry.name:
-                    dependencies.add(member_type) # A class containing itself directly is also treated as circular
-            graph[class_entry.name] = dependencies
+                if (member_type not in {"integer", "float", "void"} and member_type != class_entry.name) or member_type == class_entry.name:
+                    inherited_classes.add(member_type)
+            graph[class_entry.name] = inherited_classes
 
-        # Graph is now created
         
-        visiting: set[str] = set() # Classes currently on the active DFS recursion path
-        explored: set[str] = set() # Classes whose dependency graphs have already been checked
-        reported: set[str] = set() # Prevent duplicate diagnostics when multiple DFS paths hit the same cycle
-        stack: list[str] = [] # Tracks the current DFS path so the exact cycle can be extracted
+        visiting: set[str] = set() # classes currently on the active DFS recursion path
+        explored: set[str] = set() # classes whose dependency graphs have already been checked
+        errors: set[str] = set() # prevent duplicate diagnostics when multiple DFS paths hit the same cycle
+        stack: list[str] = [] # track the current DFS path so the exact cycle can be extracted
 
         def dfs(class_name: str) -> None:
-            visiting.add(class_name) # Mark this class as currently processing before exploring its dependencies
+            visiting.add(class_name)
             stack.append(class_name)
             for dependency in graph[class_name]:
                 if dependency not in graph:
-                    continue # Ignore dependencies that are not known classes like inheriting a class that doesn't exist, that specific check is reported elsewhere like in visit_ClassDeclNode
+                    continue # Ignore inherited_classes that are not known classes like inheriting a class that doesn't exist, that specific check is reported elsewhere like in visit_ClassDeclNode
                 
-                if dependency in visiting: # Reaching a class currently in our recursion means there's a cycle
-                    cycle = stack[stack.index(dependency):] # Slice the current recursion stack down to the cycle
+                if dependency in visiting: #There's a cycle
+                    cycle = stack[stack.index(dependency):] # Get cur path
                     for cycle_name in cycle:
-                        if cycle_name in reported:
+                        if cycle_name in errors:
                             continue
                         class_entry = self._lookup_class(cycle_name)
                         self._diagnostic(
@@ -757,13 +626,13 @@ class SemanticCheckingVisitor(Visitor):
                             f"circular class dependency involving '{cycle_name}'.",
                             class_entry.node,
                         )
-                        reported.add(cycle_name)
+                        errors.add(cycle_name)
                     continue
                 
                 elif dependency not in explored: # The class has not been seen in the current recursion and also has not been explored, so we must explore this one for circular dependencies
                     dfs(dependency)
                 
-            stack.pop() # Remove this class once all dependencies have been explored
+            stack.pop() 
             visiting.remove(class_name)
             explored.add(class_name)
 
@@ -772,6 +641,5 @@ class SemanticCheckingVisitor(Visitor):
             if class_name not in explored: # If this class wasn't explored yet, start a DFS from it because we might have multiply disconnected graphs
                 dfs(class_name)
 
-    # Record a semantic diagnostic at the source line owned by the provided AST node
     def _diagnostic(self, severity: str, code: str, message: str, node) -> None:
         self.diagnostics.append(Diagnostic(severity=severity, code=code, message=message, line=node.token.line))

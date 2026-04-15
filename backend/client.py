@@ -30,14 +30,14 @@ def process_file(src_file: Path, output_dir: Path) -> None:
     st_visitor = SymTabCreationVisitor()
     result.ast_root.accept(st_visitor)
 
-    semantic_visitor = SemanticCheckingVisitor(global_table=st_visitor.global_table)
+    semantic_visitor = SemanticCheckingVisitor()
     result.ast_root.accept(semantic_visitor)
 
     diagnostics = st_visitor.diagnostics + semantic_visitor.diagnostics
-    blocking_layout_codes = {"undeclared_class"}
+    has_errors = any(diagnostic.severity == "error" for diagnostic in diagnostics)
 
-    if not any(diagnostic.code in blocking_layout_codes for diagnostic in diagnostics):
-        mem_size_visitor = ComputeMemSizeVisitor(global_table=st_visitor.global_table)
+    if not has_errors:
+        mem_size_visitor = ComputeMemSizeVisitor()
         result.ast_root.accept(mem_size_visitor)
 
     symbol_text = ""
@@ -48,16 +48,16 @@ def process_file(src_file: Path, output_dir: Path) -> None:
     out_symboltables.write_text(symbol_text, encoding="utf-8")
     out_errors.write_text(error_text, encoding="utf-8")
 
-    has_errors = any(diagnostic.severity == "error" for diagnostic in diagnostics)
-
     if not has_errors and st_visitor.global_table is not None:
         codegen_visitor = CodeGenVisitor()
         result.ast_root.accept(codegen_visitor)
         out_moon.write_text(codegen_visitor.output(), encoding="utf-8")
+        status = "[OK] Code generation completed"
     else:
         out_moon.write_text("", encoding="utf-8")
+        status = "[ERROR] Code generation skipped"
 
-    print(f"[OK] Code generation completed: {src_file.name}")
+    print(f"{status}: {src_file.name}")
 
 
 def main() -> None:

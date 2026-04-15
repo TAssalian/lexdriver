@@ -27,7 +27,7 @@ def process_file(src_file: Path, output_dir: Path) -> None:
     st_visitor = SymTabCreationVisitor()
     result.ast_root.accept(st_visitor)
 
-    semantic_visitor = SemanticCheckingVisitor(global_table=st_visitor.global_table)
+    semantic_visitor = SemanticCheckingVisitor()
     result.ast_root.accept(semantic_visitor)
 
     diagnostics = st_visitor.diagnostics + semantic_visitor.diagnostics

@@ -7,10 +7,10 @@ from frontend.ast.nodes import ClassDeclNode, FParamNode, FParamsNode, FuncDeclN
 
 class SymTabCreationVisitor(Visitor):
     def __init__(self) -> None:
-        self.global_table: SymbolTable | None = None # Used to track all top-level declarations + what subscopes have access to
-        self.current_scope: SymbolTable | None = None # Says where to insert new SymbolEntrys, what names are visible when checking for duplicates and the types of var declarations
+        self.global_table: SymbolTable | None = None 
+        self.current_scope: SymbolTable | None = None # Use current table context
         self.class_entries_by_name: dict[str, SymbolEntry] = {} # Maps class name to its SymbolEntry to find each parent class entry and its inner table for inheritance checks
-        self.member_functions: dict[tuple[str, str, tuple[str, ...]], dict[str, SymbolEntry | list[FuncDefNode] | None]] = {} # Because this grammar separates func. declarations from func. definitions, we want to add the definition to a previously declared function instead of creating a second function entry and table.
+        self.member_functions: dict[tuple[str, str, tuple[str, ...]], dict[str, SymbolEntry | list[FuncDefNode] | None]] = {} # Match decls to defs and check for errors
         self.diagnostics: list[Diagnostic] = [] # Gather semantic warnings and errors
 
     def visit_StartNode(self, node: StartNode):
@@ -240,7 +240,7 @@ class SymTabCreationVisitor(Visitor):
                 if parents_symbol_entry and parents_symbol_entry.inner_scope_table:
                     class_table.inherited_class_tables.append(parents_symbol_entry.inner_scope_table)
             
-            # Throw warnings if members in the child class shadow inherited members.
+            # Throw warnings if members in the child class shadow inherited members
             for entry in class_table.entries:
                 inherited_data_members = []
                 inherited_member_functions = []
@@ -311,12 +311,18 @@ class SymTabCreationVisitor(Visitor):
 
             if definitions and not declaration:
                 for definition in definitions:
+                    fallback_entry = self._make_entry(definition, "member_function", owner_class=key[0])
+                    fallback_table = SymbolTable(f"{key[0]}::{key[1]}", "function", parent_scope=self.global_table)
+                    fallback_entry.inner_scope_table = fallback_table
+                    definition.symtab_entry = fallback_entry
+                    definition.symtab = fallback_table
                     self._diagnostic(
                         "error",
                         "undeclared_member_definition",
                         f"undeclared member function definition '{key[0]}::{key[1]}'.",
                         definition,
                     )
+                    self._visit_function_definition(definition, fallback_table)
 
     # Make a function declaration, definition, function parameter or variable declaration SymbolEntry to put into a SymbolTable
     def _make_entry(self, node: FuncDeclNode | FuncDefNode | FParamNode | VarDeclNode, kind: str, owner_class: str | None = None) -> SymbolEntry:

@@ -17,8 +17,8 @@ class Node:
     last_child: Node | None = None
     prev_sibling: Node | None = None
     next_sibling: Node | None = None
-    symtab: SymbolTable | None = None # Store scope associated with node so we could re-enter scopes easily for the SemanticCheckingVisitor. Without it, semantic checking would have to rediscover the relevant entries or scopes by searching from parent scope, looking at each entry for right name, then get inner scope table
-    symtab_entry: SymbolEntry | None = None # Stores declaration records in a symbol table associated with that node, which is used for types checks and id resolution.
+    symtab: SymbolTable | None = None # Allow visitors to re-enter scope without re-deriving it from parents
+    symtab_entry: SymbolEntry | None = None # Know which symbol entry corresponds to this node for quick semantic checking
     
 
     def add_child(self, child: Node) -> None:
